@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simulasi Tumbukan Dua Bola (1D)</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;margin:16px;background:#f7fafc;color:#0f172a}
+    .wrap{max-width:980px;margin:0 auto}
+    h1{font-size:20px;margin:6px 0}
+    #scene{background:#ffffff;border:1px solid #cbd5e1;border-radius:8px;display:block;margin-bottom:12px}
+    .controls{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}
+    .card{background:#fff;padding:10px;border-radius:8px;border:1px solid #e2e8f0}
+    label{display:block;font-size:12px;margin-bottom:6px}
+    input[type=range]{width:100%}
+    .row{display:flex;gap:8px;align-items:center}
+    .numbers{display:flex;gap:6px;flex-wrap:wrap}
+    button{padding:8px 10px;border-radius:8px;border:1px solid #64748b;background:#1e293b;color:#fff;cursor:pointer}
+    button.secondary{background:#fff;color:#0f172a;border:1px solid #cbd5e1}
+    .stats{display:flex;gap:12px;flex-wrap:wrap}
+    .stat{background:#eef2ff;padding:8px;border-radius:6px;border:1px solid #e0e7ff}
+    small.note{color:#475569}
+    footer{font-size:12px;color:#475569;margin-top:12px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Simulasi Tumbukan Dua Bola (1D)</h1>
+    <p class="note">Atur massa, kecepatan awal, dan koefisien restitusi. Klik <strong>Start</strong> untuk menjalankan animasi. Ukuran bola menyesuaikan massa.</p>
+
+    <canvas id="scene" width="920" height="180"></canvas>
+
+    <div class="controls">
+      <div class="card">
+        <h3>Bola A (kiri)</h3>
+        <label>Mass (kg): <span id="m1_val">2</span></label>
+        <input id="m1" type="range" min="0.2" max="10" step="0.1" value="2">
+        <label>Kecepatan (m/s, positif ke kanan): <span id="u1_val">1.5</span></label>
+        <input id="u1" type="range" min="-8" max="8" step="0.1" value="1.5">
+      </div>
+
+      <div class="card">
+        <h3>Bola B (kanan)</h3>
+        <label>Mass (kg): <span id="m2_val">3</span></label>
+        <input id="m2" type="range" min="0.2" max="10" step="0.1" value="3">
+        <label>Kecepatan (m/s, positif ke kanan): <span id="u2_val">-0.5</span></label>
+        <input id="u2" type="range" min="-8" max="8" step="0.1" value="-0.5">
+      </div>
+
+      <div class="card">
+        <h3>Pengaturan Tumbukan</h3>
+        <label>Koefisien restitusi e: <span id="e_val">1</span> (1 = lentur sempurna)</label>
+        <input id="e" type="range" min="0" max="1" step="0.01" value="1">
+        <label>Kecepatan skala animasi (x time): <span id="scale_val">1</span></label>
+        <input id="scale" type="range" min="0.2" max="3" step="0.1" value="1">
+        <div style="margin-top:8px" class="row">
+          <button id="start">Start</button>
+          <button id="pause" class="secondary">Pause</button>
+          <button id="reset" class="secondary">Reset</button>
+          <button id="compute" class="secondary">Hitung tanpa animasi</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Hasil & Momentum</h3>
+        <div class="stats">
+          <div class="stat">p1 = <span id="p1">0</span> kg·m/s</div>
+          <div class="stat">p2 = <span id="p2">0</span> kg·m/s</div>
+          <div class="stat">Total p = <span id="ptot">0</span> kg·m/s</div>
+          <div class="stat">v1 (now) = <span id="v1_display">—</span> m/s</div>
+          <div class="stat">v2 (now) = <span id="v2_display">—</span> m/s</div>
+        </div>
+        <p style="margin-top:10px"><small class="note">Catatan: hasil numerik ditampilkan setiap frame. "Hitung tanpa animasi" akan menghitung hasil tumbukan sekali berdasarkan kecepatan awal saat tombol ditekan.</small></p>
+      </div>
+    </div>
+
+    <footer>Butuh fitur tambahan (grafik energi, tumbukan beberapa bola, atau ekspor data)? Kasih tahu aku ya :)</footer>
+  </div>
+
+  <script>
+    // Canvas dan parameter
+    const canvas = document.getElementById('scene');
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+
+    // Kontrol elemen
+    const m1Input = document.getElementById('m1');
+    const m2Input = document.getElementById('m2');
+    const u1Input = document.getElementById('u1');
+    const u2Input = document.getElementById('u2');
+    const eInput = document.getElementById('e');
+    const scaleInput = document.getElementById('scale');
+
+    const m1Val = document.getElementById('m1_val');
+    const m2Val = document.getElementById('m2_val');
+    const u1Val = document.getElementById('u1_val');
+    const u2Val = document.getElementById('u2_val');
+    const eVal = document.getElementById('e_val');
+    const scaleVal = document.getElementById('scale_val');
+
+    const p1Span = document.getElementById('p1');
+    const p2Span = document.getElementById('p2');
+    const ptotSpan = document.getElementById('ptot');
+    const v1Display = document.getElementById('v1_display');
+    const v2Display = document.getElementById('v2_display');
+
+    const startBtn = document.getElementById('start');
+    const pauseBtn = document.getElementById('pause');
+    const resetBtn = document.getElementById('reset');
+    const computeBtn = document.getElementById('compute');
+
+    // Simulasi state (satuan: m untuk posisi di dunia, konversi ke pixel)
+    let state = {};
+    let raf = null;
+    let running = false;
+
+    function initState() {
+      const m1 = parseFloat(m1Input.value);
+      const m2 = parseFloat(m2Input.value);
+      const u1 = parseFloat(u1Input.value);
+      const u2 = parseFloat(u2Input.value);
+      const e = parseFloat(eInput.value);
+
+      // world positions: bola A kiri, B kanan
+      const leftEdge = 40;
+      const rightEdge = width - 40;
+
+      state = {
+        m1, m2, u1, u2, e,
+        // positions in meters (we'll map 1 meter -> pxScale pixels)
+        x1: 1.2, // meters from left
+        x2: 6.0, // meters from left
+        // we will choose scale so that usable area fits
+        pxScale: (rightEdge - leftEdge) / 8.0, // pixels per meter
+        leftEdge,
+        rightEdge,
+        radius1: massToRadius(m1),
+        radius2: massToRadius(m2),
+        time: 0
+      };
+
+      // convert meters positions to pixels when drawing
+    }
+
+    function massToRadius(m) {
+      // radius in pixels, make it visually reasonable and monotonic with mass
+      return 10 + Math.cbrt(m) * 8; // cube root keeps size growth moderate
+    }
+
+    function draw() {
+      ctx.clearRect(0,0,width,height);
+
+      // ground line
+      ctx.fillStyle = '#eef2ff';
+      ctx.fillRect(0,height-28,width,28);
+
+      // draw scale markers
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '12px system-ui';
+      const pxScale = state.pxScale;
+      for (let i=0;i<=8;i++){
+        const x = state.leftEdge + i*pxScale;
+        ctx.fillRect(x, height-28, 1, 8);
+        ctx.fillText(i + ' m', x-10, height-6);
+      }
+
+      // positions in pixels
+      const px1 = state.leftEdge + state.x1 * pxScale;
+      const px2 = state.leftEdge + state.x2 * pxScale;
+
+      // bola A
+      ctx.beginPath();
+      ctx.arc(px1, height/2, state.radius1, 0, Math.PI*2);
+      ctx.fillStyle = '#60a5fa';
+      ctx.fill();
+      ctx.strokeStyle = '#1e3a8a';
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px system-ui';
+      ctx.fillText('A', px1-5, height/2+4);
+
+      // bola B
+      ctx.beginPath();
+      ctx.arc(px2, height/2, state.radius2, 0, Math.PI*2);
+      ctx.fillStyle = '#f97316';
+      ctx.fill();
+      ctx.strokeStyle = '#7c2d12';
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.fillText('B', px2-5, height/2+4);
+
+      // arrows for velocities
+      drawArrow(px1, height/2 - state.radius1 - 16, px1 + state.u1 * 10, height/2 - state.radius1 - 16, 'v1 = ' + state.u1.toFixed(2) + ' m/s');
+      drawArrow(px2, height/2 - state.radius2 - 16, px2 + state.u2 * 10, height/2 - state.radius2 - 16, 'v2 = ' + state.u2.toFixed(2) + ' m/s');
+
+      // update numeric displays
+      const p1 = state.m1 * state.u1;
+      const p2 = state.m2 * state.u2;
+      const ptot = p1 + p2;
+      p1Span.textContent = p1.toFixed(3);
+      p2Span.textContent = p2.toFixed(3);
+      ptotSpan.textContent = ptot.toFixed(3);
+      v1Display.textContent = state.u1.toFixed(3);
+      v2Display.textContent = state.u2.toFixed(3);
+    }
+
+    function drawArrow(x1,y1,x2,y2,label){
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x1,y1);
+      ctx.lineTo(x2,y2);
+      ctx.stroke();
+      // arrowhead
+      const angle = Math.atan2(y2-y1, x2-x1);
+      const headlen = 6;
+      ctx.beginPath();
+      ctx.moveTo(x2,y2);
+      ctx.lineTo(x2-headlen*Math.cos(angle-Math.PI/6), y2-headlen*Math.sin(angle-Math.PI/6));
+      ctx.lineTo(x2-headlen*Math.cos(angle+Math.PI/6), y2-headlen*Math.sin(angle+Math.PI/6));
+      ctx.lineTo(x2,y2);
+      ctx.fillStyle = '#0f172a';
+      ctx.fill();
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(label, (x1+x2)/2 - 30, y1-6);
+    }
+
+    function step(dt) {
+      // dt in seconds
+      const s = state;
+      // update positions
+      s.x1 += s.u1 * dt;
+      s.x2 += s.u2 * dt;
+      s.time += dt;
+
+      // collision detection (1D): if centers overlap
+      const dist = s.x2 - s.x1;
+      const minDist = (s.radius1 + s.radius2) / s.pxScale; // in meters
+
+      // check approaching
+      if (dist <= minDist && (s.u1 > s.u2)) {
+        // compute post-collision velocities using restitution e
+        const u1 = s.u1, u2 = s.u2, m1 = s.m1, m2 = s.m2, e = s.e;
+        const totalMomentumBefore = m1*u1 + m2*u2;
+
+        const v1 = (m1*u1 + m2*u2 - m2*e*(u1 - u2)) / (m1 + m2);
+        const v2 = (m1*u1 + m2*u2 + m1*e*(u1 - u2)) / (m1 + m2);
+
+        s.u1 = v1; s.u2 = v2;
+
+        // separate so they are not stuck overlapping
+        const overlap = minDist - dist;
+        const sep = overlap/2 + 0.001;
+        s.x1 -= sep;
+        s.x2 += sep;
+      }
+
+      // bounce off walls
+      const leftLimit = 0.1; // meters
+      const rightLimit = 7.9; // meters
+      if (s.x1 <= leftLimit && s.u1 < 0) { s.u1 = -s.u1 * 0.8; s.x1 = leftLimit + 0.001; }
+      if (s.x2 >= rightLimit && s.u2 > 0) { s.u2 = -s.u2 * 0.8; s.x2 = rightLimit - 0.001; }
+    }
+
+    function loop(ts) {
+      const now = performance.now();
+      if (!loop._last) loop._last = now;
+      const dt_ms = now - loop._last;
+      loop._last = now;
+
+      const timeScale = parseFloat(scaleInput.value);
+      const dt = dt_ms/1000 * timeScale; // seconds
+
+      step(dt);
+      draw();
+      if (running) raf = requestAnimationFrame(loop);
+    }
+
+    // event handlers
+    function updateParamsDisplay(){
+      m1Val.textContent = parseFloat(m1Input.value).toFixed(1);
+      m2Val.textContent = parseFloat(m2Input.value).toFixed(1);
+      u1Val.textContent = parseFloat(u1Input.value).toFixed(1);
+      u2Val.textContent = parseFloat(u2Input.value).toFixed(1);
+      eVal.textContent = parseFloat(eInput.value);
+      scaleVal.textContent = parseFloat(scaleInput.value);
+    }
+
+    function applyInputsToState(){
+      state.m1 = parseFloat(m1Input.value);
+      state.m2 = parseFloat(m2Input.value);
+      state.u1 = parseFloat(u1Input.value);
+      state.u2 = parseFloat(u2Input.value);
+      state.e = parseFloat(eInput.value);
+      state.radius1 = massToRadius(state.m1);
+      state.radius2 = massToRadius(state.m2);
+    }
+
+    // compute collision outcome directly (no animation) using formula
+    function computeCollisionOutcome(){
+      const m1 = parseFloat(m1Input.value);
+      const m2 = parseFloat(m2Input.value);
+      const u1 = parseFloat(u1Input.value);
+      const u2 = parseFloat(u2Input.value);
+      const e = parseFloat(eInput.value);
+
+      const v1 = (m1*u1 + m2*u2 - m2*e*(u1 - u2)) / (m1 + m2);
+      const v2 = (m1*u1 + m2*u2 + m1*e*(u1 - u2)) / (m1 + m2);
+
+      // show result
+      v1Display.textContent = v1.toFixed(4);
+      v2Display.textContent = v2.toFixed(4);
+      p1Span.textContent = (m1*v1).toFixed(4);
+      p2Span.textContent = (m2*v2).toFixed(4);
+      ptotSpan.textContent = (m1*v1 + m2*v2).toFixed(4);
+
+      // also set state velocities so if user starts animation they will start with these
+      state.u1 = v1;
+      state.u2 = v2;
+    }
+
+    // buttons
+    startBtn.addEventListener('click', ()=>{
+      if (!running) {
+        running = true;
+        loop._last = performance.now();
+        raf = requestAnimationFrame(loop);
+      }
+    });
+    pauseBtn.addEventListener('click', ()=>{
+      if (running) { running = false; cancelAnimationFrame(raf); raf = null; }
+    });
+    resetBtn.addEventListener('click', ()=>{
+      if (running) { running = false; cancelAnimationFrame(raf); raf = null; }
+      initState();
+      applyInputsToState();
+      draw();
+    });
+    computeBtn.addEventListener('click', ()=>{
+      computeCollisionOutcome();
+      // pause animation if running
+      if (running) { running = false; cancelAnimationFrame(raf); raf = null; }
+    });
+
+    // synchronize sliders
+    [m1Input,m2Input,u1Input,u2Input,eInput,scaleInput].forEach(inp=>{
+      inp.addEventListener('input', ()=>{
+        updateParamsDisplay();
+        applyInputsToState();
+        draw();
+      });
+    });
+
+    // initialize
+    initState();
+    applyInputsToState();
+    updateParamsDisplay();
+    draw();
+
+  </script>
+</body>
+</html>
